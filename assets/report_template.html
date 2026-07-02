@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif;
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            color: #1E293B;
+            line-height: 1.7;
+            background: #fff;
+        }
+        .header {
+            background: linear-gradient(135deg, #4F46E5, #7C3AED);
+            color: white;
+            padding: 40px;
+            border-radius: 16px;
+            margin-bottom: 32px;
+        }
+        .header h1 { font-size: 28px; margin-bottom: 8px; }
+        .header .meta { opacity: 0.8; font-size: 14px; }
+        .section {
+            margin: 32px 0;
+            page-break-inside: avoid;
+        }
+        .section h2 {
+            font-size: 22px;
+            color: #4F46E5;
+            border-bottom: 2px solid #E2E8F0;
+            padding-bottom: 8px;
+            margin-bottom: 16px;
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+            margin: 16px 0;
+        }
+        .metric-card {
+            background: #F8FAFC;
+            border: 1px solid #E2E8F0;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+        .metric-card .value {
+            font-size: 26px;
+            font-weight: 700;
+            color: #4F46E5;
+        }
+        .metric-card .label {
+            font-size: 13px;
+            color: #64748B;
+            margin-top: 4px;
+        }
+        .issue-list { list-style: none; }
+        .issue-item {
+            padding: 10px 16px;
+            margin: 8px 0;
+            border-left: 4px solid #4F46E5;
+            background: #F8FAFC;
+            border-radius: 0 8px 8px 0;
+        }
+        .issue-item.high { border-color: #EF4444; background: #FEF2F2; }
+        .issue-item.medium { border-color: #F59E0B; background: #FFFBEB; }
+        .issue-item.low { border-color: #4F46E5; background: #EEF2FF; }
+        .chart-section {
+            margin: 24px 0;
+            border: 1px solid #E2E8F0;
+            border-radius: 12px;
+            padding: 20px;
+            page-break-inside: avoid;
+        }
+        .chart-section h3 {
+            font-size: 16px;
+            color: #1E293B;
+            margin-bottom: 8px;
+        }
+        .chart-section .explanation {
+            color: #64748B;
+            font-size: 14px;
+            margin-bottom: 16px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+            font-size: 14px;
+        }
+        th, td {
+            padding: 10px 14px;
+            border: 1px solid #E2E8F0;
+            text-align: left;
+        }
+        th {
+            background: #F8FAFC;
+            font-weight: 600;
+            color: #4F46E5;
+        }
+        tr:nth-child(even) { background: #F8FAFC; }
+        .conversation {
+            border: 1px solid #E2E8F0;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .msg {
+            padding: 12px 16px;
+            border-bottom: 1px solid #E2E8F0;
+        }
+        .msg:last-child { border-bottom: none; }
+        .msg.user { background: #EEF2FF; }
+        .msg.assistant { background: white; }
+        .msg .role { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge.success { background: #D1FAE5; color: #065F46; }
+        .badge.warning { background: #FEF3C7; color: #92400E; }
+        .badge.error { background: #FEE2E2; color: #991B1B; }
+        .footer {
+            margin-top: 48px;
+            padding-top: 16px;
+            border-top: 1px solid #E2E8F0;
+            text-align: center;
+            color: #94A3B8;
+            font-size: 13px;
+        }
+        @media print {
+            .section { page-break-inside: avoid; }
+            .chart-section { page-break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+    <h1>📊 {{ title }}</h1>
+    <p class="meta">生成时间: {{ generated_at }} | 文件: {{ metadata.filename }} | 格式: {{ metadata.file_type.upper() }}</p>
+</div>
+
+<!-- Overview -->
+<div class="section">
+    <h2>📋 数据概览</h2>
+    <div class="metrics-grid">
+        <div class="metric-card">
+            <div class="value">{{ overview.rows|default(0)|int|string }}</div>
+            <div class="label">总行数</div>
+        </div>
+        <div class="metric-card">
+            <div class="value">{{ overview.columns|default(0) }}</div>
+            <div class="label">总列数</div>
+        </div>
+        <div class="metric-card">
+            <div class="value">{{ overview.missing_pct|default(0) }}%</div>
+            <div class="label">缺失值比例</div>
+        </div>
+        <div class="metric-card">
+            <div class="value">{{ overview.duplicate_pct|default(0) }}%</div>
+            <div class="label">重复行比例</div>
+        </div>
+        <div class="metric-card">
+            <div class="value">{{ overview.memory_mb|default(0) }}</div>
+            <div class="label">内存 (MB)</div>
+        </div>
+    </div>
+
+    {% if columns %}
+    <table>
+        <thead>
+            <tr>
+                <th>列名</th>
+                <th>类型</th>
+                <th>缺失率</th>
+                <th>唯一值数</th>
+                <th>均值 (数值列)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for col in columns[:30] %}
+            <tr>
+                <td><strong>{{ col.name }}</strong></td>
+                <td><code>{{ col.dtype }}</code></td>
+                <td>
+                    {% if col.null_pct > 30 %}
+                        <span class="badge error">{{ col.null_pct }}%</span>
+                    {% elif col.null_pct > 10 %}
+                        <span class="badge warning">{{ col.null_pct }}%</span>
+                    {% else %}
+                        <span class="badge success">{{ col.null_pct }}%</span>
+                    {% endif %}
+                </td>
+                <td>{{ col.unique_count }}</td>
+                <td>{{ col.mean|default('-', true) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% if columns|length > 30 %}
+    <p style="color:#64748B">... 还有 {{ columns|length - 30 }} 列未显示</p>
+    {% endif %}
+    {% endif %}
+</div>
+
+<!-- Data Issues -->
+<div class="section">
+    <h2>⚠️ 数据质量问题 ({{ issue_count }})</h2>
+    {% if issues %}
+    <ul class="issue-list">
+        {% for issue in issues %}
+        <li class="issue-item {{ issue.severity_class }}">
+            <strong>[{{ issue.severity }}]</strong> {{ issue.description }}
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p>✅ 未检测到明显的数据质量问题。</p>
+    {% endif %}
+</div>
+
+<!-- Charts -->
+{% if charts %}
+<div class="section">
+    <h2>📈 分析图表 ({{ chart_count }})</h2>
+    {% for chart in charts %}
+    <div class="chart-section">
+        <h3>图表 {{ chart.index }}: {{ chart.title }}</h3>
+        {% if chart.explanation %}
+        <p class="explanation">{{ chart.explanation }}</p>
+        {% endif %}
+        <div class="plotly-chart">{{ chart.figure_html }}</div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Conversation -->
+{% if conversation %}
+<div class="section">
+    <h2>💬 对话记录 ({{ message_count }} 条消息)</h2>
+    <div class="conversation">
+        {% for msg in conversation %}
+        <div class="msg {% if '用户' in msg.role %}user{% else %}assistant{% endif %}">
+            <div class="role">{{ msg.role }}</div>
+            <div>{{ msg.content }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Footer -->
+<div class="footer">
+    <p>由 <strong>Smart Data Analyst</strong> 生成 | 开源项目 | Powered by AI</p>
+</div>
+
+</body>
+</html>
