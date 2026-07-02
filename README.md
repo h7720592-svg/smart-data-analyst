@@ -27,7 +27,7 @@
 ### 1. Clone & Install
 
 ```bash
-git clone https://github.com/yourusername/smart-data-analyst.git
+git clone https://github.com/h7720592-svg/smart-data-analyst.git
 cd smart-data-analyst
 pip install -r requirements.txt
 ```
