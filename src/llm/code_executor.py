@@ -46,10 +46,11 @@ ALLOWED_IMPORTS = {
     "warnings",
     "copy",
     "operator",
+    "random",
+    "textwrap",
+    "hashlib",
     # NLP / text processing
     "jieba",
-    "collections",
-    "re",
     "string",
 }
 
@@ -83,8 +84,8 @@ AST_BLOCKED_CALLS = {
     "delattr",
 }
 
-# Maximum execution time (seconds)
-MAX_EXECUTION_TIME = 30
+# Maximum execution time (seconds) — generous for NLP tasks on large datasets
+MAX_EXECUTION_TIME = 120
 
 # Memory limit in bytes (2GB per process)
 MAX_MEMORY_BYTES = 2 * 1024 * 1024 * 1024
@@ -103,6 +104,163 @@ class ExecutionResult:
 
 
 # ── AST Validation ───────────────────────────────────────────────────────
+
+
+# Built-in names always available in Python
+_PYTHON_BUILTINS = set(__builtins__.keys()) if hasattr(__builtins__, 'keys') else set(dir(__builtins__))
+
+
+class UndefinedVariableChecker(ast.NodeVisitor):
+    """AST visitor that checks for potentially undefined variable references.
+
+    Catches patterns like:
+        [w for w in positive_words if w]   # positive_words never defined
+        df['col'].apply(lambda x: x in word_list)  # word_list never defined
+    """
+
+    def __init__(self):
+        self.defined_names: set[str] = {
+            # Always available in execution context
+            "df", "pd", "fig",
+            # Common imports (we also track imports dynamically)
+        }
+        self.imported_names: set[str] = set()
+        self.issues: list[str] = []
+        # Track scopes for comprehensions and lambdas
+        self.scope_stack: list[set[str]] = []
+
+    def _is_known(self, name: str) -> bool:
+        if name in _PYTHON_BUILTINS:
+            return True
+        if name in self.defined_names:
+            return True
+        if name in self.imported_names:
+            return True
+        for scope in self.scope_stack:
+            if name in scope:
+                return True
+        return False
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            name = alias.asname or alias.name.split(".")[0]
+            self.imported_names.add(name)
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        for alias in node.names:
+            name = alias.asname or alias.name
+            if name == "*":
+                continue
+            self.imported_names.add(name)
+        self.generic_visit(node)
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        # Visit RHS first in case RHS references names defined earlier
+        # Use self.visit (not generic_visit) so compound nodes (ListComp, Lambda, etc.)
+        # dispatch to their specific visitor methods
+        for target in node.targets:
+            self.visit(node.value)  # visit value first
+            self._add_target(target)
+        # Don't generic_visit again — we already visited node.value
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        self.visit(node.value)
+        self._add_target(node.target)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if node.value:
+            self.visit(node.value)
+        if node.target:
+            self._add_target(node.target)
+
+    def visit_For(self, node: ast.For) -> None:
+        self.visit(node.iter)  # use visit() so Name nodes dispatch to visit_Name
+        self._add_target(node.target)
+        for stmt in node.body:
+            self.visit(stmt)
+        for stmt in node.orelse:
+            self.visit(stmt)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        # Track function name as defined
+        self.defined_names.add(node.name)
+        # Push a scope for arguments
+        arg_names = {a.arg for a in node.args.args}
+        self.scope_stack.append(arg_names)
+        for stmt in node.body:
+            self.visit(stmt)
+        self.scope_stack.pop()
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        # Push scope for lambda arguments
+        arg_names = {a.arg for a in node.args.args}
+        self.scope_stack.append(arg_names)
+        self.generic_visit(node)
+        self.scope_stack.pop()
+
+    def visit_ListComp(self, node: ast.ListComp) -> None:
+        self._visit_comprehension(node)
+
+    def visit_SetComp(self, node: ast.SetComp) -> None:
+        self._visit_comprehension(node)
+
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
+        self._visit_comprehension(node)
+
+    def visit_DictComp(self, node: ast.DictComp) -> None:
+        comp_names: set[str] = set()
+        # First pass: collect all iteration variable names
+        for gen in node.generators:
+            self._add_target(gen.target, comp_names)
+        # Push scope BEFORE visiting sub-expressions
+        self.scope_stack.append(comp_names)
+        for gen in node.generators:
+            self.visit(gen.iter)
+            for if_clause in gen.ifs:
+                self.visit(if_clause)
+        self.visit(node.key)
+        self.visit(node.value)
+        self.scope_stack.pop()
+
+    def _visit_comprehension(self, node: ast.ListComp | ast.SetComp | ast.GeneratorExp) -> None:
+        comp_names: set[str] = set()
+        # First pass: collect all iteration variable names
+        for gen in node.generators:
+            self._add_target(gen.target, comp_names)
+        # Push scope BEFORE visiting any sub-expressions
+        self.scope_stack.append(comp_names)
+        # Now visit iter sources (checked against outer scope) and element (against comp scope)
+        for gen in node.generators:
+            self.visit(gen.iter)  # use visit() to dispatch to visit_Name
+            for if_clause in gen.ifs:
+                self.visit(if_clause)  # use visit() to dispatch to visit_Name
+        self.visit(node.elt)  # use visit() to dispatch to visit_Name
+        self.scope_stack.pop()
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if isinstance(node.ctx, ast.Load):
+            if not self._is_known(node.id):
+                self.issues.append(
+                    f"变量 '{node.id}' 在第 {node.lineno} 行被引用，但未找到其定义。"
+                    f"请确保在引用前已赋值或导入该名称。"
+                )
+        elif isinstance(node.ctx, ast.Store):
+            self.defined_names.add(node.id)
+
+    def _add_target(self, target: ast.AST, target_set: set[str] | None = None) -> None:
+        """Extract names from an assignment target."""
+        s = target_set if target_set is not None else self.defined_names
+        if isinstance(target, ast.Name):
+            s.add(target.id)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for elt in target.elts:
+                self._add_target(elt, s)
+        elif isinstance(target, ast.Starred):
+            self._add_target(target.value, s)
+        elif isinstance(target, ast.Subscript):
+            # e.g. df['col'] — track 'df' is already known, subscription is fine
+            pass
 
 
 class CodeValidator(ast.NodeVisitor):
@@ -183,6 +341,25 @@ def validate_code_ast(code: str) -> tuple[bool, list[str]]:
     return True, []
 
 
+def validate_variable_definitions(code: str) -> list[str]:
+    """Check for potentially undefined variable references using AST.
+
+    Args:
+        code: Python source code string.
+
+    Returns:
+        List of warning/error messages about undefined variables.
+    """
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []  # Syntax errors are handled by validate_code_ast
+
+    checker = UndefinedVariableChecker()
+    checker.visit(tree)
+    return checker.issues
+
+
 # ── Restricted Execution Environment ─────────────────────────────────────
 
 
@@ -258,6 +435,17 @@ def _execute_in_process(
             })
             return
 
+        # Check for undefined variable references
+        var_issues = validate_variable_definitions(code)
+        if var_issues:
+            result_queue.put({
+                "success": False,
+                "error": "代码中存在未定义变量:\n" + "\n".join(f"  • {i}" for i in var_issues),
+                "error_type": "UndefinedVariableError",
+                "stdout": stdout_capture.getvalue(),
+            })
+            return
+
         # Compile code (restricted)
         try:
             compiled = compile(code, "<llm_generated>", "exec")
@@ -270,18 +458,17 @@ def _execute_in_process(
             })
             return
 
-        # Build restricted globals
+        # Build restricted globals (also used as locals so imports are
+        # visible inside functions defined in the executed code)
         restricted_globals = _build_restricted_globals(df)
-        restricted_locals: dict[str, Any] = {}
 
-        # Execute
-        exec(compiled, restricted_globals, restricted_locals)
+        # Execute — using the same dict for globals and locals ensures that
+        # 'import jieba' adds jieba to globals where functions can find it
+        exec(compiled, restricted_globals)
 
-        # Extract figures
+        # Extract figures (restricted_globals now serves as both globals and locals)
         figures = []
-        if "fig" in restricted_locals:
-            figures.append(restricted_locals["fig"])
-        elif "fig" in restricted_globals:
+        if "fig" in restricted_globals:
             figure_val = restricted_globals["fig"]
             # Don't capture the module itself
             from plotly.graph_objects import Figure as GoFigure
@@ -336,6 +523,16 @@ def execute(
             success=False,
             error="; ".join(errors),
             error_type="ValidationError",
+            stdout="",
+        )
+
+    # Check for undefined variable references (fast, in-process)
+    var_issues = validate_variable_definitions(code)
+    if var_issues:
+        return ExecutionResult(
+            success=False,
+            error="代码中存在未定义变量:\n" + "\n".join(f"  • {i}" for i in var_issues),
+            error_type="UndefinedVariableError",
             stdout="",
         )
 

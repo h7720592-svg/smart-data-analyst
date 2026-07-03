@@ -55,4 +55,10 @@ pg = st.navigation(
 )
 
 # ── Run ───────────────────────────────────────────────────────────────────
-pg.run()
+def main() -> None:
+    """Entry point for 'smart-analyst' CLI command."""
+    pg.run()
+
+
+if __name__ == "__main__":
+    main()

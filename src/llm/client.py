@@ -29,6 +29,54 @@ PROVIDER_CONFIGS = {
 }
 
 
+def _extract_json_object(text: str) -> Optional[str]:
+    """Extract a JSON object with balanced braces from text.
+
+    Unlike a greedy regex, this correctly handles nested objects and
+    strings containing braces.
+
+    Args:
+        text: Raw text that may contain a JSON object.
+
+    Returns:
+        The JSON object string, or None if not found.
+    """
+    start = text.find("{")
+    if start == -1:
+        return None
+
+    depth = 0
+    in_string = False
+    escape_next = False
+
+    for i in range(start, len(text)):
+        char = text[i]
+
+        if escape_next:
+            escape_next = False
+            continue
+
+        if char == "\\":
+            escape_next = True
+            continue
+
+        if char == '"' and not escape_next:
+            in_string = not in_string
+            continue
+
+        if in_string:
+            continue
+
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+
+    return None
+
+
 class LLMClient:
     """Unified LLM client supporting multiple OpenAI-compatible providers.
 
@@ -89,7 +137,7 @@ class LLMClient:
         self,
         messages: list[dict[str, str]],
         temperature: float = 0.3,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         stream: bool = False,
     ) -> str:
         """Send a chat completion request.
@@ -144,7 +192,7 @@ class LLMClient:
         self,
         messages: list[dict[str, str]],
         temperature: float = 0.3,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
     ) -> Generator[str, None, None]:
         """Stream chat completion tokens.
 
@@ -192,7 +240,7 @@ class LLMClient:
         self,
         messages: list[dict[str, str]],
         temperature: float = 0.1,
-        max_tokens: int = 4096,
+        max_tokens: int = 16384,
     ) -> dict[str, Any]:
         """Send a chat request and parse the response as JSON.
 
@@ -236,17 +284,17 @@ class LLMClient:
                 except json.JSONDecodeError:
                     continue
 
-        # Match raw JSON object
-        json_obj_pattern = r"\{[\s\S]*\}"
-        matches = re.findall(json_obj_pattern, response_text)
-        if matches:
+        # Match JSON object with balanced braces (handles nested objects)
+        json_obj = _extract_json_object(response_text)
+        if json_obj:
             try:
-                return json.loads(matches[0])
+                return json.loads(json_obj)
             except json.JSONDecodeError:
                 pass
 
         raise ValueError(
-            f"无法解析 LLM 响应为 JSON。原始响应:\n{response_text[:500]}"
+            f"无法解析 LLM 响应为 JSON。响应长度: {len(response_text)} 字符\n"
+            f"原始响应:\n{response_text[:800]}"
         )
 
 

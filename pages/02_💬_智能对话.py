@@ -1,9 +1,6 @@
 """Page 2: Natural language chat with AI data analysis."""
 
-import json
 import logging
-import re
-import time
 
 import streamlit as st
 
@@ -23,47 +20,6 @@ st.set_page_config(
 )
 
 init_session_state()
-
-
-def _parse_llm_response(response_text: str) -> dict:
-    """Parse LLM response text to extract JSON.
-
-    Args:
-        response_text: Raw LLM response.
-
-    Returns:
-        Parsed dict with type, code, explanation keys.
-
-    Raises:
-        ValueError: If the response cannot be parsed.
-    """
-    # Try direct JSON parse
-    try:
-        return json.loads(response_text)
-    except json.JSONDecodeError:
-        pass
-
-    # Try to extract JSON from markdown code blocks
-    json_pattern = r"```(?:json)?\s*([\s\S]*?)```"
-    matches = re.findall(json_pattern, response_text)
-    if matches:
-        for match in matches:
-            try:
-                return json.loads(match.strip())
-            except json.JSONDecodeError:
-                continue
-
-    # Try to find JSON object in text
-    json_obj_pattern = r"\{[\s\S]*\}"
-    matches = re.findall(json_obj_pattern, response_text)
-    if matches:
-        for match in matches:
-            try:
-                return json.loads(match)
-            except json.JSONDecodeError:
-                continue
-
-    raise ValueError(f"无法解析 LLM 响应。\n原始响应片段:\n{response_text[:300]}")
 
 
 def _execute_chart_code(code: str) -> ExecutionResult:
@@ -166,10 +122,9 @@ def _auto_fix_and_retry(code: str, error_msg: str, container) -> None:
             "base_url": st.session_state.get("llm_base_url", ""),
         }
         client = create_client_from_config(config)
-        response_text = client.chat(
-            messages=fix_messages, temperature=0.1, max_tokens=4096
+        result = client.chat_structured(
+            messages=fix_messages, temperature=0.1, max_tokens=16384
         )
-        result = _parse_llm_response(response_text)
         fixed_code = result.get("code", "")
         fixed_explanation = result.get("explanation", "已自动修正代码。")
 
@@ -188,11 +143,14 @@ def _auto_fix_and_retry(code: str, error_msg: str, container) -> None:
         st.info(f"自动修正不可用: {e}")
 
 
-def _process_user_message(user_input: str) -> None:
+def _process_user_message(user_input: str) -> dict:
     """Process a user message and generate an AI response.
 
     Args:
         user_input: The user's text input.
+
+    Returns:
+        Parsed response dict with type/code/explanation.
     """
     df = st.session_state.get("df")
     if df is None:
@@ -227,25 +185,21 @@ def _process_user_message(user_input: str) -> None:
         client = create_client_from_config(config)
 
         with st.spinner("🤔 AI 正在思考..."):
-            response_text = client.chat(
-                messages=messages, temperature=0.3, max_tokens=4096
+            result = client.chat_structured(
+                messages=messages, temperature=0.1, max_tokens=16384
             )
 
-        result = _parse_llm_response(response_text)
-        response_type = result.get("type", "text")
-        explanation = result.get("explanation", "")
-
-        return result, response_text
+        return result
 
     except ValueError as e:
         if "API Key" in str(e):
-            return {"type": "text", "explanation": "⚠️ 请先在「📊 数据上传」页面的侧边栏配置 API Key。"}, ""
+            return {"type": "text", "explanation": "⚠️ 请先在「📊 数据上传」页面的侧边栏配置 API Key。"}
         raise
     except Exception as e:
         return {
             "type": "text",
             "explanation": f"❌ AI 服务调用失败: {e}\n\n请检查 API Key 和网络连接。",
-        }, ""
+        }
 
 
 # ── Sidebar ──────────────────────────────────────────────────────────────
@@ -340,7 +294,7 @@ if df is not None:
         # Generate AI response
         with st.chat_message("assistant"):
             try:
-                result, raw_response = _process_user_message(prompt)
+                result = _process_user_message(prompt)
 
                 # Render the result
                 _handle_llm_result(result, st.empty())

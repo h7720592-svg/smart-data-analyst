@@ -63,6 +63,13 @@ Your Python code MUST follow these rules exactly:
    - Set appropriate color schemes
    - For bar charts with many categories, use horizontal bars
    - Limit data to top 20 categories when there are too many
+   - **CRITICAL**: Always define every variable BEFORE using it. Double-check your code:
+     if you reference a name like `df_clean`, `t_clean`, `words`, etc.,
+     make sure it was created on an earlier line
+   - **PERFORMANCE**: For NLP tasks (jieba, sentiment analysis) on datasets with >1000 rows,
+     MUST sample first: `df_sample = df.head(2000)` and process the sample.
+     Do NOT loop over the entire dataset row-by-row — use pandas vectorized operations or
+     limit to a reasonable sample. Execution has a 120-second timeout.
 
 5. **NLP / Text Analysis**: You CAN do basic NLP tasks using the available tools:
    - Chinese word segmentation: use jieba.cut() or jieba.lcut()
@@ -70,7 +77,8 @@ Your Python code MUST follow these rules exactly:
    - Sentiment analysis: define your own positive/negative word lists and count matches
    - Topic modeling: use word frequency + co-occurrence as a simple proxy
    - Emoji analysis: use regex to extract emoji patterns
-   - ALWAYS define your word lists BEFORE using them (this is a common mistake)
+   - **CRITICAL**: Every new variable (df_clean, words, word_counts, etc.) MUST appear on the LEFT side of `=` BEFORE you use it on the RIGHT side or in a later line. Run through your code mentally: does each name exist before I reference it?
+   - **PERFORMANCE**: If the dataset has more than 1000 rows, add `df = df.head(2000)` early in your code to avoid timeout. jieba tokenization over thousands of long texts will exceed the 120s timeout.
    - NEVER say you "cannot do NLP" — you have all the basic tools needed
 
 6. **NEVER use**:
@@ -135,6 +143,17 @@ Response:
     "type": "chart",
     "code": "import plotly.express as px\\nnumeric_cols = df.select_dtypes(include=['number']).columns\\ncorr = df[numeric_cols].corr()\\nfig = px.imshow(corr, text_auto='.2f', color_continuous_scale='RdBu_r', zmin=-1, zmax=1, title='数值列相关性热力图')",
     "explanation": "已生成相关性热力图。红色表示正相关，蓝色表示负相关。颜色越深表示相关性越强。"
+}}
+```
+
+### Example 6: Sentiment Analysis & Word Frequency (Chinese text)
+User: "对这些评论做情感分析和词频统计"
+Response:
+```json
+{{
+    "type": "chart+text",
+    "code": "import jieba\\nimport pandas as pd\\nfrom collections import Counter\\nimport plotly.express as px\\nimport plotly.graph_objects as go\\nfrom plotly.subplots import make_subplots\\n\\n# Step 1: DEFINE word lists FIRST (before any lambda/comprehension)\\npositive_words = ['好', '棒', '喜欢', '优秀', '不错', '厉害', '赞', '支持', '牛', '强', '方便', '实用', 'nice', 'good', 'great', '完美', '惊艳', '推荐', '期待', '进步', '惊喜', '满意', '值得', '清晰', '高效']\\nnegative_words = ['差', '烂', '讨厌', '恶心', '垃圾', '失望', '不好', '无语', '烦', '坑', '假', '骗', '错', '贵', '慢', '卡', '垃圾', 'low', 'bad', '差劲', '忽悠', '尴尬', '粗糙', '多余', '反感']\\n\\n# Step 2: Drop missing values\\ncomments = df[df.iloc[:, 0].notna()].iloc[:, 0].astype(str).tolist()\\n\\n# Step 3: Sentiment scoring (all variables already defined above)\\ndef get_sentiment(text):\\n    pos = sum(1 for w in positive_words if w in str(text))\\n    neg = sum(1 for w in negative_words if w in str(text))\\n    if pos > neg:\\n        return 'positive'\\n    elif neg > pos:\\n        return 'negative'\\n    else:\\n        return 'neutral'\\n\\nsentiments = [get_sentiment(c) for c in comments]\\nsentiment_counts = pd.Series(sentiments).value_counts()\\n\\n# Step 4: Word segmentation and frequency\\nall_words = []\\nfor text in comments:\\n    words = jieba.lcut(str(text))\\n    all_words.extend([w for w in words if len(w) >= 2 and w not in ['的', '了', '是', '在', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '这', '他', '她']])\\n\\nword_counts = Counter(all_words).most_common(20)\\nwords_df = pd.DataFrame(word_counts, columns=['word', 'count'])\\n\\n# Step 5: Create chart\\nfig = make_subplots(rows=1, cols=2, subplot_titles=['情感分析', '高频词 TOP20'], specs=[[{{'type': 'pie'}}, {{'type': 'bar'}}]])\\n\\ncolors = {{'positive': '#22c55e', 'neutral': '#94a3b8', 'negative': '#ef4444'}}\\nfig.add_trace(go.Pie(labels=sentiment_counts.index, values=sentiment_counts.values, marker_colors=[colors.get(s, '#94a3b8') for s in sentiment_counts.index], hole=0.4), row=1, col=1)\\nfig.add_trace(go.Bar(x=words_df['count'], y=words_df['word'], orientation='h', marker_color='#6366f1'), row=1, col=2)\\nfig.update_layout(title='评论情感分析与高频词统计', height=500, showlegend=False)\\nfig.update_yaxes(autorange='reversed', row=1, col=2)",
+    "explanation": "已完成情感分析：正面评论占比{percent}。高频词分析显示用户主要关注..."
 }}
 ```
 
@@ -284,5 +303,20 @@ def build_error_fix_prompt(code: str, error_message: str, user_request: str) -> 
 1. 分析错误原因
 2. 修正代码（确保符合所有安全规则）
 3. 以相同的 JSON 格式返回正确的代码
+4. 特别注意：检查所有变量是否在引用前已定义（NameError/ModuleNotFoundError 必须彻底修复）
+5. 如果错误是 "变量未定义"，检查该变量是否在任何 comprehension/list/dict/set/genexpr 或 lambda 中被使用但尚未赋值。修复方法：把变量定义（赋值语句）移到引用它的那一行之前！
+
+**常见错误模式与修复**:
+❌ 错误: `[w for w in positive_words if w]` 但 `positive_words` 未定义
+✅ 修复: 在 comprehension 之前添加 `positive_words = ['好', '棒', ...]`
+
+❌ 错误: 代码执行超时（>120秒）
+✅ 修复: 在代码开头添加 `df = df.head(2000)` 对大数据集采样，避免 jieba 逐行处理全部数据导致超时
+
+❌ 错误: 禁止导入模块: random
+✅ 修复: 移除 `import random`，用其他方式实现（或使用 `import numpy as np` 后用 `np.random`）
+
+❌ 错误: `df['text'].apply(lambda x: word_count[x])` 但 `word_count` 未定义
+✅ 修复: 在 lambda 之前计算 `word_count = Counter(all_words)`
 
 请直接返回 JSON 格式的修正结果。"""

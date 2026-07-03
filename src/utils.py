@@ -39,6 +39,7 @@ def init_session_state() -> None:
         "llm_model": "deepseek-v4-flash",
         "llm_api_key": "",
         "llm_base_url": "",
+        "llm_thinking": False,
         # Chat
         "messages": [],
         "figures": [],

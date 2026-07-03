@@ -1,11 +1,15 @@
 """Page 3: Report generation and export."""
 
+import os
 from datetime import datetime
 
 import streamlit as st
 
 from src.export.html_report import build_html_report, save_report
 from src.utils import init_session_state
+
+# Ensure exports directory exists
+os.makedirs("exports", exist_ok=True)
 
 st.set_page_config(
     page_title="导出报告 - Smart Data Analyst",
