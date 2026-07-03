@@ -17,8 +17,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
     menu_items={
-        "Get Help": "https://github.com/yourusername/smart-data-analyst/issues",
-        "Report a bug": "https://github.com/yourusername/smart-data-analyst/issues/new",
+        "Get Help": "https://github.com/h7720592-svg/smart-data-analyst/issues",
+        "Report a bug": "https://github.com/h7720592-svg/smart-data-analyst/issues/new",
         "About": (
             "# 智能数据分析助手\n"
             "AI-powered data analysis and visualization.\n\n"

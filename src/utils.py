@@ -93,10 +93,12 @@ def get_api_key(provider: str) -> Optional[str]:
     Returns:
         API key string or None.
     """
-    # Check session state first
+    # Check session state — provider-specific key first, then generic key
     state_key = f"llm_api_key_{provider}"
     if state_key in st.session_state and st.session_state[state_key]:
         return st.session_state[state_key]
+    if "llm_api_key" in st.session_state and st.session_state["llm_api_key"]:
+        return st.session_state["llm_api_key"]
 
     # Check st.secrets (Streamlit Cloud)
     try:

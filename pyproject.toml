@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "Your Name", email = "your-email@example.com"}
+    {name = "zwhTokisakiKurumi", email = "3463709750@qq.com"}
 ]
 keywords = ["data-analysis", "visualization", "ai", "llm", "streamlit"]
 classifiers = [

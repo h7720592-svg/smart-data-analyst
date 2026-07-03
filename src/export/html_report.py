@@ -199,7 +199,7 @@ def _build_fallback_report(context: dict) -> str:
     {"".join(f'<p><strong>{m["role"]}:</strong> {m["content"][:500]}</p>' for m in context.get("conversation", []))}
 
     <hr>
-    <p class="meta">由 Smart Data Analyst 生成 | 开源项目: github.com/yourusername/smart-data-analyst</p>
+    <p class="meta">由 Smart Data Analyst 生成 | 开源项目: github.com/h7720592-svg/smart-data-analyst</p>
 </body>
 </html>"""
 

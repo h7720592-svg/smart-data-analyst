@@ -41,6 +41,10 @@ profile_reports/
 # Export output
 exports/
 
+# Generated documents (don't track docx/pdf)
+docs/*.docx
+docs/*.pdf
+
 # Jupyter
 .ipynb_checkpoints/
 *.ipynb
