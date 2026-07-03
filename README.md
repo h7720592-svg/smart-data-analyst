@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-green.svg)](https://www.python.org/)
-[![CI](https://img.shields.io/badge/CI-passing-brightgreen.svg)](https://github.com)
+[![CI](https://github.com/h7720592-svg/smart-data-analyst/actions/workflows/ci.yml/badge.svg)](https://github.com/h7720592-svg/smart-data-analyst/actions)
 
 > AI-powered data analysis and visualization — upload your data, chat with AI, get beautiful charts and insights.
 
@@ -63,7 +63,7 @@ Open http://localhost:8501 in your browser.
 
 ## 📸 Screenshots
 
-*(Add screenshots here after running the app)*
+> Run the app with `streamlit run app.py` and take screenshots of the three main pages: Data Upload, Smart Chat, and Report Export.
 
 ---
 

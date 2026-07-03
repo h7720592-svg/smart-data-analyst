@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 PROVIDER_CONFIGS = {
     "deepseek": {
         "base_url": "https://api.deepseek.com/v1",
-        "models": ["deepseek-v4-flash"],
+        "models": ["deepseek-v4-flash", "deepseek-chat", "deepseek-reasoner"],
     },
     "openai": {
         "base_url": "https://api.openai.com/v1",
@@ -112,10 +112,6 @@ class LLMClient:
             raise ValueError(msg)
 
         try:
-            # DeepSeek doesn't support simultaneous stream + max_tokens
-            # Use stream and truncate if needed
-            use_stream = stream and self.provider not in ("deepseek",)
-
             extra_body = {}
             if self.thinking and self.provider == "deepseek":
                 extra_body["thinking"] = {"type": "enabled"}
@@ -125,12 +121,12 @@ class LLMClient:
                 messages=messages,  # type: ignore[arg-type]
                 temperature=temperature,
                 max_tokens=max_tokens,
-                stream=use_stream,
+                stream=stream,
                 timeout=120,
                 extra_body=extra_body if extra_body else None,
             )
 
-            if use_stream:
+            if stream:
                 content_parts = []
                 for chunk in response:
                     if chunk.choices[0].delta.content:

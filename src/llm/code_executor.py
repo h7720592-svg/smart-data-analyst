@@ -236,7 +236,6 @@ def _execute_in_process(
         result_queue: Queue to send results back to parent.
     """
     import io
-    import sys
     import warnings
 
     # Suppress warnings

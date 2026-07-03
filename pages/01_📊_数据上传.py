@@ -130,7 +130,7 @@ with st.sidebar:
     st.session_state["llm_provider"] = provider
 
     model_options = {
-        "deepseek": ["deepseek-v4-flash"],
+        "deepseek": ["deepseek-v4-flash", "deepseek-chat", "deepseek-reasoner"],
         "openai": ["gpt-4o", "gpt-4o-mini", "gpt-4.1-mini"],
         "groq": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
         "ollama": ["llama3", "qwen2.5", "mistral"],
