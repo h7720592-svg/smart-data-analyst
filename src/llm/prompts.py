@@ -46,7 +46,6 @@ Your Python code MUST follow these rules exactly:
    - import plotly.express as px
    - import plotly.graph_objects as go
    - from scipy import stats
-   - import matplotlib.pyplot as plt
    - import jieba  (Chinese word segmentation)
    - from collections import Counter
    - import re
@@ -66,10 +65,19 @@ Your Python code MUST follow these rules exactly:
    - **CRITICAL**: Always define every variable BEFORE using it. Double-check your code:
      if you reference a name like `df_clean`, `t_clean`, `words`, etc.,
      make sure it was created on an earlier line
+   - **CRITICAL — DATA AGGREGATION**: The sandbox CANNOT handle raw row-level data
+     in charts (e.g., scatter plots with 100+ individual points will hang).
+     ALWAYS aggregate data BEFORE plotting:
+       ✅ DO:   `sales = df.groupby('地区')['销售额'].sum().reset_index()`  then plot `sales`
+       ✅ DO:   `df_monthly = df.groupby(df['日期'].dt.to_period('M'))['销售额'].sum()`
+       ❌ DON'T: `px.scatter(df, x='销售额', y='利润')`  — raw 100+ rows hangs!
+       ❌ DON'T: `go.Scatter(x=df['销售额'], y=df['利润'])`  — raw rows hang!
+     For scatter plots, aggregate to ≤50 data points (e.g., by category/region/month).
+     For distribution, use histogram (`px.histogram`) or box plot (`px.box`) instead.
    - **PERFORMANCE**: For NLP tasks (jieba, sentiment analysis) on datasets with >1000 rows,
      MUST sample first: `df_sample = df.head(2000)` and process the sample.
      Do NOT loop over the entire dataset row-by-row — use pandas vectorized operations or
-     limit to a reasonable sample. Execution has a 120-second timeout.
+     limit to a reasonable sample. Execution has a 60-second timeout.
 
 5. **NLP / Text Analysis**: You CAN do basic NLP tasks using the available tools:
    - Chinese word segmentation: use jieba.cut() or jieba.lcut()
@@ -78,7 +86,7 @@ Your Python code MUST follow these rules exactly:
    - Topic modeling: use word frequency + co-occurrence as a simple proxy
    - Emoji analysis: use regex to extract emoji patterns
    - **CRITICAL**: Every new variable (df_clean, words, word_counts, etc.) MUST appear on the LEFT side of `=` BEFORE you use it on the RIGHT side or in a later line. Run through your code mentally: does each name exist before I reference it?
-   - **PERFORMANCE**: If the dataset has more than 1000 rows, add `df = df.head(2000)` early in your code to avoid timeout. jieba tokenization over thousands of long texts will exceed the 120s timeout.
+   - **PERFORMANCE**: If the dataset has more than 1000 rows, add `df = df.head(2000)` early in your code to avoid timeout. jieba tokenization over thousands of long texts will exceed the 60s timeout.
    - NEVER say you "cannot do NLP" — you have all the basic tools needed
 
 6. **NEVER use**:
@@ -153,7 +161,7 @@ Response:
 {{
     "type": "chart+text",
     "code": "import jieba\\nimport pandas as pd\\nfrom collections import Counter\\nimport plotly.express as px\\nimport plotly.graph_objects as go\\nfrom plotly.subplots import make_subplots\\n\\n# Step 1: DEFINE word lists FIRST (before any lambda/comprehension)\\npositive_words = ['好', '棒', '喜欢', '优秀', '不错', '厉害', '赞', '支持', '牛', '强', '方便', '实用', 'nice', 'good', 'great', '完美', '惊艳', '推荐', '期待', '进步', '惊喜', '满意', '值得', '清晰', '高效']\\nnegative_words = ['差', '烂', '讨厌', '恶心', '垃圾', '失望', '不好', '无语', '烦', '坑', '假', '骗', '错', '贵', '慢', '卡', '垃圾', 'low', 'bad', '差劲', '忽悠', '尴尬', '粗糙', '多余', '反感']\\n\\n# Step 2: Drop missing values\\ncomments = df[df.iloc[:, 0].notna()].iloc[:, 0].astype(str).tolist()\\n\\n# Step 3: Sentiment scoring (all variables already defined above)\\ndef get_sentiment(text):\\n    pos = sum(1 for w in positive_words if w in str(text))\\n    neg = sum(1 for w in negative_words if w in str(text))\\n    if pos > neg:\\n        return 'positive'\\n    elif neg > pos:\\n        return 'negative'\\n    else:\\n        return 'neutral'\\n\\nsentiments = [get_sentiment(c) for c in comments]\\nsentiment_counts = pd.Series(sentiments).value_counts()\\n\\n# Step 4: Word segmentation and frequency\\nall_words = []\\nfor text in comments:\\n    words = jieba.lcut(str(text))\\n    all_words.extend([w for w in words if len(w) >= 2 and w not in ['的', '了', '是', '在', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '这', '他', '她']])\\n\\nword_counts = Counter(all_words).most_common(20)\\nwords_df = pd.DataFrame(word_counts, columns=['word', 'count'])\\n\\n# Step 5: Create chart\\nfig = make_subplots(rows=1, cols=2, subplot_titles=['情感分析', '高频词 TOP20'], specs=[[{{'type': 'pie'}}, {{'type': 'bar'}}]])\\n\\ncolors = {{'positive': '#22c55e', 'neutral': '#94a3b8', 'negative': '#ef4444'}}\\nfig.add_trace(go.Pie(labels=sentiment_counts.index, values=sentiment_counts.values, marker_colors=[colors.get(s, '#94a3b8') for s in sentiment_counts.index], hole=0.4), row=1, col=1)\\nfig.add_trace(go.Bar(x=words_df['count'], y=words_df['word'], orientation='h', marker_color='#6366f1'), row=1, col=2)\\nfig.update_layout(title='评论情感分析与高频词统计', height=500, showlegend=False)\\nfig.update_yaxes(autorange='reversed', row=1, col=2)",
-    "explanation": "已完成情感分析：正面评论占比{percent}。高频词分析显示用户主要关注..."
+    "explanation": "已完成情感分析。正面评论占比最高，反映出整体评论偏向积极。高频词分析显示用户主要关注产品质量和性价比..."
 }}
 ```
 
@@ -161,6 +169,10 @@ Response:
 - User messages may be in Chinese or English
 - Your explanation MUST be in Chinese by default
 - Keep explanations clear and concise (2-5 sentences)
+- **CRITICAL**: Your explanation text is shown directly to the user. NEVER use placeholder
+  text like `[计算后填入]`, `{{placeholder}}`, or `[待补充]`. If a specific number was
+  calculated in the code, include the actual value. If you can't know the exact value,
+  describe it qualitatively (e.g., "华东地区销售额最高" instead of "销售额约[值]元").
 
 ## IMPORTANT
 - ALWAYS respond in valid JSON format
@@ -234,6 +246,41 @@ def _default_chart_descriptions() -> str:
 """
 
 
+def _estimate_tokens(text: str) -> int:
+    """Roughly estimate token count for a string.
+
+    Uses character-based heuristic: ~1.5 chars per token for Chinese,
+    ~4 chars per token for English. This is conservative.
+    """
+    if not text:
+        return 0
+    # Simple approach: ~2.5 chars per token on average (mixed CN/EN)
+    return max(1, len(text) // 2)
+
+
+def _truncate_message_content(content: str, max_chars: int = 3000) -> str:
+    """Truncate a single message if it's too long.
+
+    Args:
+        content: Message content to potentially truncate.
+        max_chars: Maximum characters before truncation.
+
+    Returns:
+        Truncated content with a note if truncated.
+    """
+    if len(content) <= max_chars:
+        return content
+    return content[:max_chars] + "\n...(内容过长，已截断)"
+
+
+# Maximum total tokens to reserve for conversation context
+MAX_CONTEXT_TOKENS = 28000
+# Reserve tokens for the assistant's response
+RESERVE_TOKENS = 4000
+# Tokens usable for history and system prompt
+MAX_HISTORY_TOKENS = MAX_CONTEXT_TOKENS - RESERVE_TOKENS
+
+
 def build_chat_context(
     messages: list[dict],
     schema: list[dict],
@@ -243,6 +290,8 @@ def build_chat_context(
     memory_mb: float = 0,
 ) -> list[dict]:
     """Build the full message list for an LLM chat call.
+
+    Automatically trims history to stay within token budget.
 
     Args:
         messages: Conversation history (user/assistant turns).
@@ -263,32 +312,72 @@ def build_chat_context(
 
     chat_messages = [{"role": "system", "content": system_prompt}]
 
-    # Add recent conversation history
+    # Track token budget
+    used_tokens = _estimate_tokens(system_prompt)
+
+    # Add recent conversation history, respecting token budget
     recent = messages[-max_history:] if len(messages) > max_history else messages
-    for msg in recent:
-        chat_messages.append({
+    for msg in reversed(recent):
+        content = msg.get("content", "")
+        # Truncate long content
+        content = _truncate_message_content(content, max_chars=3000)
+        msg_tokens = _estimate_tokens(content)
+
+        if used_tokens + msg_tokens > MAX_HISTORY_TOKENS:
+            # Stop adding more history — budget exhausted
+            break
+
+        chat_messages.insert(1, {  # insert after system prompt, preserving order
             "role": msg.get("role", "user"),
-            "content": msg.get("content", ""),
+            "content": content,
         })
+        used_tokens += msg_tokens
 
     return chat_messages
 
 
-def build_error_fix_prompt(code: str, error_message: str, user_request: str) -> str:
+def build_error_fix_prompt(
+    code: str,
+    error_message: str,
+    user_request: str,
+    schema: list[dict] | None = None,
+    n_rows: int = 0,
+    n_cols: int = 0,
+) -> str:
     """Build a prompt asking the LLM to fix broken code.
 
     Args:
         code: The original code that produced an error.
         error_message: The error message/traceback.
         user_request: The user's original request.
+        schema: Optional column schema to provide data context.
+        n_rows: Number of rows in the dataset.
+        n_cols: Number of columns.
 
     Returns:
         A prompt string for the LLM.
     """
+    # Build data context section if schema is available
+    data_context = ""
+    if schema and len(schema) > 0:
+        col_lines = []
+        for col in schema[:30]:
+            samples = ", ".join(str(v) for v in col.get("sample_values", [])[:2])
+            col_lines.append(
+                f"  - `{col['column_name']}` ({col['dtype']}): "
+                f"示例值=[{samples}]"
+            )
+        data_context = f"""
+**当前数据信息**:
+- 行数: {n_rows:,}, 列数: {n_cols}
+- 可用列:
+{chr(10).join(col_lines)}
+
+"""
     return f"""你的代码执行时出错了。请修正后重新生成。
 
 **用户请求**: {user_request}
-
+{data_context}
 **你的代码**:
 ```python
 {code}
@@ -310,8 +399,10 @@ def build_error_fix_prompt(code: str, error_message: str, user_request: str) -> 
 ❌ 错误: `[w for w in positive_words if w]` 但 `positive_words` 未定义
 ✅ 修复: 在 comprehension 之前添加 `positive_words = ['好', '棒', ...]`
 
-❌ 错误: 代码执行超时（>120秒）
-✅ 修复: 在代码开头添加 `df = df.head(2000)` 对大数据集采样，避免 jieba 逐行处理全部数据导致超时
+❌ 错误: 代码执行超时（>60秒）
+✅ 修复: 在代码开头添加 `df = df.head(2000)` 对大数据集采样。
+    如果是散点图/折线图导致超时：**严禁使用原始行级数据绘图**。
+    必须先 groupby 聚合（如按地区/月份/类别汇总），将数据点降到 50 个以下。
 
 ❌ 错误: 禁止导入模块: random
 ✅ 修复: 移除 `import random`，用其他方式实现（或使用 `import numpy as np` 后用 `np.random`）

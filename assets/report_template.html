@@ -238,7 +238,7 @@
         {% if chart.explanation %}
         <p class="explanation">{{ chart.explanation }}</p>
         {% endif %}
-        <div class="plotly-chart">{{ chart.figure_html }}</div>
+        <div class="plotly-chart">{{ chart.figure_html | safe }}</div>
     </div>
     {% endfor %}
 </div>

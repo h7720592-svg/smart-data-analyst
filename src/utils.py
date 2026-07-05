@@ -1,7 +1,9 @@
 """Shared utilities: session state, logging, configuration."""
 
+import json
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -162,3 +164,67 @@ def get_llm_config() -> dict:
         "api_key": api_key,
         "base_url": base_url,
     }
+
+
+def save_session_to_file(filepath: str = "session_backup.json") -> str:
+    """Save current conversation state to a JSON file.
+
+    Saves messages and figures metadata (not the Plotly figure objects).
+
+    Args:
+        filepath: Path to save the session backup.
+
+    Returns:
+        The filepath where data was saved.
+    """
+    messages = st.session_state.get("messages", [])
+    figures_meta = []
+    for f in st.session_state.get("figures", []):
+        figures_meta.append({
+            "explanation": f.get("explanation", ""),
+            # Plotly figures can't be serialized, skip figure data
+        })
+
+    # Collect metadata about the dataset
+    metadata = st.session_state.get("df_metadata", {})
+    data_info = {
+        "filename": metadata.get("filename", ""),
+        "rows": metadata.get("rows", 0),
+        "columns": metadata.get("columns", 0),
+        "file_type": metadata.get("file_type", ""),
+    } if metadata else {}
+
+    backup = {
+        "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "data_info": data_info,
+        "message_count": len(messages),
+        "figure_count": len(figures_meta),
+        "messages": messages,
+        "figures_meta": figures_meta,
+    }
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(backup, f, ensure_ascii=False, indent=2)
+
+    return filepath
+
+
+def load_session_from_file(filepath: str = "session_backup.json") -> dict | None:
+    """Load a previously saved conversation session.
+
+    Args:
+        filepath: Path to the session backup file.
+
+    Returns:
+        dict with messages and metadata, or None if file doesn't exist.
+    """
+    path = Path(filepath)
+    if not path.exists():
+        return None
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            backup = json.load(f)
+        return backup
+    except (json.JSONDecodeError, OSError):
+        return None

@@ -98,3 +98,99 @@ blockquote {
     border-radius: 0 8px 8px 0;
     margin: 8px 0;
 }
+
+/* ── Responsive / Mobile Adaptation ──────────────────────────────────── */
+
+/* Tablets and smaller (max 768px) */
+@media (max-width: 768px) {
+    .metric-card {
+        padding: 10px 12px;
+        border-radius: 8px;
+    }
+    .metric-value {
+        font-size: 22px;
+    }
+    .metric-label {
+        font-size: 11px;
+    }
+
+    /* Stack columns into single column */
+    [data-testid="stHorizontalBlock"] [data-testid="column"] {
+        min-width: 100% !important;
+        flex: 0 0 100% !important;
+    }
+
+    /* Make buttons larger and full-width on mobile */
+    .stButton > button {
+        width: 100%;
+        padding: 10px 16px;
+        font-size: 15px;
+    }
+
+    /* Reduce chart container margins */
+    .chart-container {
+        padding: 8px;
+        margin: 6px 0;
+    }
+
+    /* Issue cards: full width with larger text */
+    .issue-card {
+        padding: 10px 12px;
+        font-size: 14px;
+    }
+
+    /* Sidebar adjustments */
+    [data-testid="stSidebar"] {
+        min-width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    /* Chat messages: full width */
+    .chat-message {
+        padding: 0.5rem;
+        border-radius: 8px;
+    }
+}
+
+/* Small phones (max 480px) */
+@media (max-width: 480px) {
+    h1, .st-emotion-cache-10trblm {
+        font-size: 20px !important;
+    }
+    h2, .st-emotion-cache-1629p8f {
+        font-size: 16px !important;
+    }
+
+    .metric-value {
+        font-size: 18px;
+    }
+    .metric-label {
+        font-size: 10px;
+    }
+
+    /* Tabs: smaller, scrollable */
+    .stTabs [data-baseweb="tab"] {
+        padding: 4px 8px;
+        font-size: 13px;
+    }
+
+    /* Dataframe: horizontal scroll */
+    [data-testid="stDataFrame"] {
+        font-size: 12px;
+    }
+}
+
+/* Touch-friendly: larger tap targets on mobile */
+@media (hover: none) and (pointer: coarse) {
+    .stButton > button {
+        min-height: 44px;
+    }
+
+    [data-baseweb="tab"] {
+        min-height: 44px;
+    }
+
+    input, select, textarea {
+        font-size: 16px !important;  /* prevent iOS zoom on focus */
+    }
+}

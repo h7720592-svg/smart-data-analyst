@@ -294,7 +294,7 @@ class LLMClient:
 
         raise ValueError(
             f"无法解析 LLM 响应为 JSON。响应长度: {len(response_text)} 字符\n"
-            f"原始响应:\n{response_text[:800]}"
+            f"原始响应（前800字符）:\n{response_text[:800]}"
         )
 
 

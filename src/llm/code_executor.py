@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 # ── Security Configuration ──────────────────────────────────────────────
 
 # Allowed import modules
+# NOTE: matplotlib/seaborn are deliberately excluded — they can hang on headless
+# Windows subprocesses. All visualization is handled by plotly.
 ALLOWED_IMPORTS = {
     "pandas",
     "numpy",
@@ -28,9 +30,6 @@ ALLOWED_IMPORTS = {
     "plotly.express",
     "plotly.graph_objects",
     "plotly.graph_objs",
-    "matplotlib",
-    "matplotlib.pyplot",
-    "seaborn",
     "scipy",
     "scipy.stats",
     "scipy.signal",
@@ -84,8 +83,15 @@ AST_BLOCKED_CALLS = {
     "delattr",
 }
 
-# Maximum execution time (seconds) — generous for NLP tasks on large datasets
-MAX_EXECUTION_TIME = 120
+# Method/attribute calls blocked at AST level — these would hang the process
+AST_BLOCKED_ATTR_CALLS = {
+    "show",       # matplotlib plt.show() — tries to open GUI, hangs on headless
+    "show_block", # matplotlib figure.show() — same issue
+}
+
+# Maximum execution time (seconds)
+MAX_EXECUTION_TIME = 60
+
 
 # Memory limit in bytes (2GB per process)
 MAX_MEMORY_BYTES = 2 * 1024 * 1024 * 1024
@@ -296,6 +302,14 @@ class CodeValidator(ast.NodeVisitor):
         # Check for direct calls to blocked builtins (AST-level blocking)
         if isinstance(node.func, ast.Name) and node.func.id in AST_BLOCKED_CALLS:
             self.errors.append(f"禁止调用函数: {node.func.id}")
+
+        # Check for blocked method calls (e.g., plt.show() hangs on headless systems)
+        if isinstance(node.func, ast.Attribute):
+            if node.func.attr in AST_BLOCKED_ATTR_CALLS:
+                self.errors.append(
+                    f"禁止调用方法: .{node.func.attr}() — 会导致进程挂起"
+                )
+
         self.generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
@@ -413,7 +427,12 @@ def _execute_in_process(
         result_queue: Queue to send results back to parent.
     """
     import io
+    import os
+    import threading
     import warnings
+
+    # ── Critical: prevent matplotlib from hanging on Windows without a display ──
+    os.environ.setdefault("MPLBACKEND", "Agg")
 
     # Suppress warnings
     warnings.filterwarnings("ignore")
@@ -422,6 +441,34 @@ def _execute_in_process(
     stdout_capture = io.StringIO()
     sys.stdout = stdout_capture
     sys.stderr = stdout_capture
+
+    # ── Internal timeout: kill the process from within if code hangs ──
+    # This is a second layer of defense (parent process also has a timeout).
+    # We use a slightly shorter timeout so we can capture diagnostics before
+    # the parent kills us.
+    _INTERNAL_TIMEOUT = 55  # seconds (parent timeout is 60s)
+
+    def _on_timeout():
+        """Called from timer thread when execution hangs."""
+        # Write diagnostic info to a temporary file that the parent can read
+        try:
+            import tempfile
+            diagnostic = {
+                "error": "代码在子进程内部超时",
+                "stdout": stdout_capture.getvalue(),
+            }
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False, prefix="sandbox_diag_"
+            ) as f:
+                import json as _json
+                _json.dump(diagnostic, f, ensure_ascii=False)
+        except Exception:
+            pass
+        os._exit(1)
+
+    _timer = threading.Timer(_INTERNAL_TIMEOUT, _on_timeout)
+    _timer.daemon = True
+    _timer.start()
 
     try:
         # Validate code
@@ -445,6 +492,15 @@ def _execute_in_process(
                 "stdout": stdout_capture.getvalue(),
             })
             return
+
+        # ── Save generated code for debugging ──
+        try:
+            import tempfile as _tmp
+            _log_path = _tmp.gettempdir() + "/sandbox_last_code.py"
+            with open(_log_path, "w", encoding="utf-8") as _f:
+                _f.write(code)
+        except Exception:
+            pass
 
         # Compile code (restricted)
         try:
@@ -494,6 +550,7 @@ def _execute_in_process(
         })
 
     finally:
+        _timer.cancel()
         sys.stdout = sys.__stdout__
         sys.stderr = sys.__stderr__
 

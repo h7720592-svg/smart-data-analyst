@@ -38,9 +38,10 @@ def html_to_pdf(
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
     try:
+        from weasyprint import CSS
+
         html = HTML(string=html_content)
 
-        # Try with CJK font configuration
         if use_cjk_fonts:
             # Common CJK fonts on different platforms
             cjk_fonts = [
@@ -59,7 +60,7 @@ def html_to_pdf(
                 "sans-serif",
             ]
             font_family = ", ".join(cjk_fonts)
-            css = f"""
+            css = CSS(string=f"""
             @page {{
                 size: A4;
                 margin: 2cm;
@@ -80,8 +81,8 @@ def html_to_pdf(
                 font-family: {font_family};
                 line-height: 1.6;
             }}
-            """
-            html.write_pdf(output_path, stylesheets=[], presentational_hints=True)
+            """)
+            html.write_pdf(output_path, stylesheets=[css], presentational_hints=True)
         else:
             html.write_pdf(output_path)
 

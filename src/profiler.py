@@ -4,7 +4,6 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-from scipy import stats as scipy_stats
 
 # Sampling threshold: datasets larger than this will be sampled for profiling
 MAX_PROFILE_ROWS = 200_000
@@ -274,3 +273,161 @@ def get_correlation_matrix(df: pd.DataFrame) -> Optional[dict]:
         "columns": list(corr.columns),
         "matrix": corr.round(3).values.tolist(),
     }
+
+
+# ── Data Cleaning / Preprocessing ───────────────────────────────────────
+
+
+def fill_missing_values(df: pd.DataFrame, strategy: str = "auto") -> pd.DataFrame:
+    """Fill missing values in a DataFrame.
+
+    Args:
+        df: Input DataFrame.
+        strategy: Filling strategy:
+            - "auto": median for numeric, mode for categorical
+            - "mean": mean for numeric, mode for categorical
+            - "median": median for numeric, mode for categorical
+            - "mode": mode for all columns
+            - "drop": drop rows with any missing values
+
+    Returns:
+        DataFrame with missing values filled.
+    """
+    df = df.copy()
+
+    if strategy == "drop":
+        return df.dropna().reset_index(drop=True)
+
+    for col in df.columns:
+        if df[col].isna().sum() == 0:
+            continue
+
+        if pd.api.types.is_numeric_dtype(df[col]):
+            if strategy in ("mean",):
+                fill_val = df[col].mean()
+            else:
+                fill_val = df[col].median()
+        else:
+            # Categorical — use mode
+            mode_vals = df[col].mode()
+            fill_val = mode_vals[0] if len(mode_vals) > 0 else "缺失"
+
+        df[col] = df[col].fillna(fill_val)
+
+    return df
+
+
+def clip_outliers(
+    df: pd.DataFrame,
+    method: str = "iqr",
+    columns: list[str] | None = None,
+) -> pd.DataFrame:
+    """Handle outliers in numeric columns.
+
+    Args:
+        df: Input DataFrame.
+        method: Outlier handling method:
+            - "iqr": Clip values to [Q1 - 1.5*IQR, Q3 + 1.5*IQR]
+            - "zscore": Clip values to within 3 standard deviations
+            - "percentile": Clip values to [1st, 99th] percentile
+        columns: Specific columns to process. If None, all numeric columns.
+
+    Returns:
+        DataFrame with outliers handled.
+    """
+    df = df.copy()
+
+    if columns is None:
+        columns = df.select_dtypes(include=[np.number]).columns.tolist()
+
+    for col in columns:
+        if col not in df.columns or not pd.api.types.is_numeric_dtype(df[col]):
+            continue
+
+        clean = df[col].dropna()
+        if len(clean) < 4:
+            continue
+
+        if method == "iqr":
+            q1 = clean.quantile(0.25)
+            q3 = clean.quantile(0.75)
+            iqr = q3 - q1
+            if iqr > 0:
+                lower = q1 - 1.5 * iqr
+                upper = q3 + 1.5 * iqr
+                df[col] = df[col].clip(lower, upper)
+        elif method == "zscore":
+            mean = clean.mean()
+            std = clean.std()
+            if std > 0:
+                lower = mean - 3 * std
+                upper = mean + 3 * std
+                df[col] = df[col].clip(lower, upper)
+        elif method == "percentile":
+            lower = clean.quantile(0.01)
+            upper = clean.quantile(0.99)
+            df[col] = df[col].clip(lower, upper)
+
+    return df
+
+
+def drop_constant_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Drop columns that have only one unique value.
+
+    Args:
+        df: Input DataFrame.
+
+    Returns:
+        DataFrame with constant columns removed.
+    """
+    df = df.copy()
+    constant_cols = [col for col in df.columns if df[col].nunique() <= 1]
+    if constant_cols:
+        df = df.drop(columns=constant_cols)
+    return df
+
+
+def clean_dataframe(
+    df: pd.DataFrame,
+    fill_strategy: str = "auto",
+    outlier_method: str = "iqr",
+    drop_constant: bool = True,
+) -> tuple[pd.DataFrame, dict]:
+    """Apply all cleaning steps and return the cleaned DataFrame with a report.
+
+    Args:
+        df: Input DataFrame.
+        fill_strategy: Strategy for fill_missing_values().
+        outlier_method: Method for clip_outliers().
+        drop_constant: Whether to drop constant columns.
+
+    Returns:
+        Tuple of (cleaned_df, cleaning_report_dict).
+    """
+    original_rows = len(df)
+    original_cols = len(df.columns)
+    original_missing = int(df.isna().sum().sum())
+
+    # Step 1: Drop constant columns
+    if drop_constant:
+        df = drop_constant_columns(df)
+
+    # Step 2: Fill missing values
+    df = fill_missing_values(df, strategy=fill_strategy)
+    remaining_missing = int(df.isna().sum().sum())
+
+    # Step 3: Clip outliers
+    df = clip_outliers(df, method=outlier_method)
+
+    report = {
+        "original_rows": original_rows,
+        "original_columns": original_cols,
+        "final_rows": len(df),
+        "final_columns": len(df.columns),
+        "original_missing": original_missing,
+        "remaining_missing": remaining_missing,
+        "constant_cols_dropped": original_cols - len(df.columns)
+        if drop_constant else 0,
+    }
+
+    return df, report

@@ -25,11 +25,6 @@ def _check_data_ready() -> bool:
     if st.session_state.get("df") is None:
         st.warning("⚠️ 请先在「📊 数据上传」页面上传数据文件。")
         return False
-
-    if not st.session_state.get("messages"):
-        st.info("💡 请先在「💬 智能对话」页面与 AI 对话，生成分析结果后再导出报告。")
-        return False
-
     return True
 
 
@@ -44,11 +39,11 @@ if not _check_data_ready():
 st.subheader("📋 报告内容预览")
 
 df = st.session_state["df"]
-metadata = st.session_state.get("df_metadata", {})
-df_summary = st.session_state.get("df_summary", {})
-df_issues = st.session_state.get("df_issues", [])
-messages = st.session_state.get("messages", [])
-figures = st.session_state.get("figures", [])
+metadata = st.session_state.get("df_metadata") or {}
+df_summary = st.session_state.get("df_summary") or {}
+df_issues = st.session_state.get("df_issues") or []
+messages = st.session_state.get("messages") or []
+figures = st.session_state.get("figures") or []
 profile_report_path = st.session_state.get("profile_report_path")
 
 # Display report summary
@@ -78,6 +73,11 @@ if figures:
     st.subheader("📈 包含的图表")
     for i, fig_data in enumerate(figures):
         st.markdown(f"**图表 {i + 1}**: {fig_data.get('explanation', '无描述')[:100]}")
+elif not messages:
+    st.info(
+        "💡 提示：当前没有分析结果。请先到「💬 智能对话」页面与 AI 对话，"
+        "生成图表后再导出完整报告。你也可以仅导出数据概览。"
+    )
 
 # ── Export Options ──────────────────────────────────────────────────────
 st.divider()
@@ -158,17 +158,19 @@ if st.button("🔨 生成报告", type="primary", use_container_width=True):
                     st.components.v1.html(html_content, height=600, scrolling=True)
 
             elif export_format == "pdf":
-                # First save HTML, then convert to PDF
+                # First save HTML, then try to convert to PDF
                 html_path = f"exports/report_{base_name}_{timestamp}.html"
                 pdf_path = f"exports/report_{base_name}_{timestamp}.pdf"
                 save_report(html_content, html_path)
 
+                pdf_success = False
                 try:
                     from src.export.pdf_report import html_to_pdf
 
                     html_to_pdf(html_content, pdf_path)
+                    pdf_success = True
 
-                    # Provide download
+                    # Provide PDF download
                     with open(pdf_path, "rb") as f:
                         st.download_button(
                             label="📥 下载 PDF 报告",
@@ -177,34 +179,40 @@ if st.button("🔨 生成报告", type="primary", use_container_width=True):
                             mime="application/pdf",
                             use_container_width=True,
                         )
-
                     st.success(f"✅ PDF 报告已生成！保存在: `{pdf_path}`")
 
                 except ImportError:
                     st.warning(
                         "⚠️ 需要安装 WeasyPrint 才能导出 PDF。\n\n"
-                        "请运行: `pip install weasyprint`\n\n"
-                        "已为您生成 HTML 版本作为替代。"
+                        "请运行: `pip install weasyprint`"
                     )
-                    with open(html_path, "r", encoding="utf-8") as f:
-                        st.download_button(
-                            label="📥 下载 HTML 报告（替代 PDF）",
-                            data=f.read(),
-                            file_name=f"report_{base_name}.html",
-                            mime="text/html",
-                            use_container_width=True,
-                        )
                 except Exception as e:
-                    st.error(f"PDF 生成失败: {e}")
-                    st.info("已为您生成 HTML 版本作为替代。")
+                    error_str = str(e)
+                    if "dll" in error_str.lower() or "library" in error_str.lower():
+                        st.warning(
+                            "⚠️ WeasyPrint 在你的 Windows 系统上无法运行，"
+                            "因为它依赖 GTK 库，而你的系统中存在不兼容的 DLL"
+                            "（通常由 GTKWave、GIMP 等软件安装）。\n\n"
+                            "**推荐替代方案：** 下载下方的 HTML 报告，用浏览器打开后按 "
+                            "`Ctrl+P` → 另存为 PDF。图表和样式会完整保留。"
+                        )
+                    else:
+                        st.warning(f"PDF 生成失败: {e}")
+
+                # Always offer HTML download as reliable alternative
+                if not pdf_success:
                     with open(html_path, "r", encoding="utf-8") as f:
                         st.download_button(
-                            label="📥 下载 HTML 报告（替代 PDF）",
+                            label="📥 下载 HTML 报告（用浏览器打开后 Ctrl+P 即可打印为 PDF）",
                             data=f.read(),
                             file_name=f"report_{base_name}.html",
                             mime="text/html",
                             use_container_width=True,
                         )
+                    st.info(
+                        "💡 **HTML 报告包含完整交互式图表**，在所有浏览器中均可查看。"
+                        "打开后按 `Ctrl+P` → 选择「另存为 PDF」即可获得 PDF 版本。"
+                    )
 
         except Exception as e:
             st.error(f"报告生成失败: {e}")
